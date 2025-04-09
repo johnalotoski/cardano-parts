@@ -1,0 +1,41 @@
+name: Checkout and merge PR
+description: Checkout base and PR branch, create local merge commit with smart shallow fetch.
+inputs:
+  base_ref:
+    description: 'Base branch ref (usually github.event.pull_request.base.ref)'
+    required: true
+  pr_number:
+    description: 'PR number (usually github.event.pull_request.number)'
+    required: true
+outputs:
+  merge_success:
+    description: 'Whether merge was successful'
+    value: ${{ steps.merge.outcome == 'success' }}
+runs:
+  using: "composite"
+  steps:
+    - run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git fetch --no-tags --depth=10 origin ${{ inputs.base_ref }}
+        git fetch --no-tags --depth=10 origin pull/${{ inputs.pr_number }}/head:pr
+      shell: bash
+
+    - id: merge
+      run: |
+        set -e
+        git checkout -b base FETCH_HEAD
+        if git merge --no-ff --no-edit pr; then
+          echo "Merge succeeded."
+        else
+          echo "Merge failed, possibly due to shallow history. Retrying with deeper fetch..."
+          git fetch --unshallow || git fetch --depth=50
+          if git merge --no-ff --no-edit pr; then
+            echo "Merge succeeded after deeper fetch."
+          else
+            echo "Merge conflict detected."
+            exit 1
+          fi
+        fi
+      shell: bash
+
